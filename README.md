@@ -21,13 +21,14 @@ The following image presents an example alignment for IBM1 EM:
 <img src="Project1/garbage_em.png" />
 
 The results on test data were the following:
-<style type="text/css">
-.tg  {border-collapse:collapse;border-spacing:0;}
-.tg td{font-family:Arial, sans-serif;font-size:14px;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
-.tg th{font-family:Arial, sans-serif;font-size:14px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
-.tg .tg-us36{border-color:inherit;vertical-align:top}
-</style>
+
 <table class="tg">
+  <tr>
+    <th class="tg-us36">Model</th>
+    <th class="tg-us36">Training</th>
+    <th class="tg-us36">Selection</th>
+    <th class="tg-us36">AER<br></th>
+  </tr>
   <tr>
     <th class="tg-us36">IBM 1</th>
     <th class="tg-us36">MLE</th>
