@@ -30,10 +30,10 @@ The results on test data were the following:
     <th class="tg-us36">AER<br></th>
   </tr>
   <tr>
-    <th class="tg-us36">IBM 1</th>
-    <th class="tg-us36">MLE</th>
-    <th class="tg-us36">AER</th>
-    <th class="tg-us36">0.2852<br></th>
+    <td class="tg-us36">IBM 1</td>
+    <td class="tg-us36">MLE</td>
+    <td class="tg-us36">AER</td>
+    <td class="tg-us36">0.2852<br></td>
   </tr>
   <tr>
     <td class="tg-us36">IBM 1</td>
