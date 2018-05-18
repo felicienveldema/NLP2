@@ -54,7 +54,7 @@ class Dictionary(object):
 class Corpus(object):
     """Collects words and corresponding associations, preprocesses them."""
 
-    def __init__(self, pathl1, pathl2, batch_size, nr_docs, nr_unique_words,
+    def __init__(self, pathl1, pathl2, batch_size, num_symbols,
                  min_count, lower, enable_cuda=False):
         """Initialize pairs of words and associations.
 
@@ -62,7 +62,9 @@ class Corpus(object):
             pathl1 (str): the path to the L1 data
             pathl2 (str): the path to the L2 data
             batch_size (int): int indicating the desired size for batches
-            nr_docs (int): how many sentences should be used from the corpus
+            num_symbols (int): number of symbols for BPE
+            min_count (int): word must occur at least min count times
+            lower (bool): if true, sentences are lowercased
             enable_cuda (bool): whether to cuda the batches
         """
         self.batch_size = batch_size
@@ -80,17 +82,19 @@ class Corpus(object):
                 line_f = self.prepare(line_f, lower)
                 self.dict_e.add_text(line_e)
                 self.dict_f.add_text(line_f)
-                self.lines_e.append(line_e)
-                self.lines_f.append(line_f)
-                if len(self.lines_e) == nr_docs and nr_docs != -1:
-                    break
 
-        learn_bpe(self.dict_e.counts, open("learned_bpe_e.txt", 'w', encoding='utf8'), 10000, min_frequency=40)
-        learn_bpe(self.dict_f.counts, open("learned_bpe_f.txt", 'w', encoding='utf8'), 10000, min_frequency=40)
-        bpe_f = BPE(open("learned_bpe_f.txt", 'r', encoding='utf8'), vocab=deepcopy(self.dict_f.counts))
-        bpe_e = BPE(open("learned_bpe_e.txt", 'r', encoding='utf8'), vocab=deepcopy(self.dict_e.counts))
+        # Learn BPEs
+        out = open("learned_bpe_e.txt", 'w', encoding='utf8')
+        learn_bpe(self.dict_e.counts, out, num_symbols, min_frequency=min_count)
+        out = open("learned_bpe_e.txt", 'r', encoding='utf8')
+        self.bpe_e = BPE(out, vocab=deepcopy(self.dict_e.counts))
 
-        # Read in the corpus
+        out = open("learned_bpe_f.txt", 'w', encoding='utf8')
+        learn_bpe(self.dict_f.counts, out, num_symbols, min_frequency=min_count)
+        out = open("learned_bpe_f.txt", 'r', encoding='utf8')
+        self.bpe_f = BPE(out, vocab=deepcopy(self.dict_f.counts))
+
+        # Read in the corpus again, now with BPE adapted vocabulary
         self.dict_e = Dictionary()
         self.dict_f = Dictionary()
         with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r', encoding='utf8') as f_fre:
@@ -100,12 +104,13 @@ class Corpus(object):
                     line_e = line_e.lower()
                     line_f = line_f.lower()
 
-                line_e = bpe_e.process_line(line_e)
-                line_f = bpe_f.process_line(line_f)
+                line_e = self.bpe_e.process_line(line_e)
+                line_f = self.bpe_f.process_line(line_f)
                 self.dict_e.add_text(line_e)
                 self.dict_f.add_text(line_f)
+                self.lines_e.append(line_e)
+                self.lines_f.append(line_f)
 
-        # Update dictionaries and map to UNK
         self.vocab_size_e = len(self.dict_e.word2index)
         self.vocab_size_f = len(self.dict_f.word2index)
 
