@@ -128,12 +128,10 @@ class Corpus(object):
             list of batches
         """
         # Sort lines by the length of the English sentences
-        sorted_lengths = [[len(x), len(y), x, y]
+        sorted_lengths = [[len(x), len(y), word_positions(x), word_positions(y), x, y]
                                for x,y in zip(self.lines_e, self.lines_f)]
         sorted_lengths.sort()
-        eng_sents = [x[2] for x in sorted_lengths]
-        fre_sents = [x[3] for x in sorted_lengths]
-
+        
         batches = []
         
         # Go through data in steps of batch size
@@ -142,28 +140,46 @@ class Corpus(object):
             max_english = max([x[0] for x in sorted_lengths[i:i+self.batch_size]])
             batch_french = LongTensor(self.batch_size, max_french)
             batch_english = LongTensor(self.batch_size, max_english)
+            batch_english_pos = LongTensor(self.batch_size, max_english)
+            batch_french_pos = LongTensor(self.batch_size, max_french)
 
-            batch_lines_e = eng_sents[i:i+self.batch_size]
-            batch_lines_f = fre_sents[i:i+self.batch_size]
-            for j, (eline, fline) in enumerate(zip(batch_lines_e, batch_lines_f)):
+            batch_lines_e = sorted_lengths[4][i:i+self.batch_size]
+            batch_lines_f = sorted_lengths[5][i:i+self.batch_size]
+            batch_pos_e = sorted_lengths[2][i:i+self.batch_size]
+            batch_pos_f = sorted_lengths[3][i:i+self.batch_size]
+            for j, data in enumerate(sorted_lengths):
                 # Map words to indices and pad with EOS tag
                 fline = self.pad_list(
-                    fline, False, max_french, pad=self.dict_f.word2index['</s>']
+                    data[5], False, max_french, pad=self.dict_f.word2index['</s>']
                 )
                 eline = self.pad_list(
-                    eline, True, max_english, pad=self.dict_e.word2index['</s>']
+                    data[4], True, max_english, pad=self.dict_e.word2index['</s>']
                 )
-                
+
                 batch_french[j, :] = LongTensor(fline)
                 batch_english[j,:] = LongTensor(eline)
 
+                e_pos = data[2] + [data[-1]]*(max_english - len(data[2]))
+                f_pos = data[3] + [data[-1]]*(max_french - len(data[3]))
+                batch_english_pos[j,:] = LongTensor(e_pos)
+                batch_french_pos[j,:] = LongTensor(e_pos)
+                
             if enable_cuda:
-                batches.append((Variable(batch_english).cuda(), Variable(batch_french).cuda()))
+                batches.append((Variable(batch_english).cuda(), Variable(batch_english_pos).cuda(), Variable(batch_french).cuda(), Variable(batch_french_pos).cuda()))
             else:
-                batches.append((Variable(batch_english), Variable(batch_french)))
+                batches.append((Variable(batch_english), Variable(batch_english_pos), Variable(batch_french), Variable(batch_french_pos)))
         random.shuffle(batches)
         return batches
 
+    def word_positions(line):
+        result = []
+        pos = 1
+        for word in line:
+            result.append(pos)
+            if not (len(word) > 2 and word[-2:] == '@@'):
+                pos+=1
+        return result
+        
     def pad_list(self, line, english, length, pad=0):
         """Pads list to a certain length
         
