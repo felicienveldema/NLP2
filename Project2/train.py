@@ -24,9 +24,9 @@ if __name__ == "__main__":
     p.add_argument('--enable_cuda', action='store_true', help='use CUDA')
     p.add_argument('--epochs', type=int, default=10, help='#epochs')
     p.add_argument('--dim', default=50, type=int)
-    p.add_argument('--nr_sents', default=-1, type=int)
+    p.add_argument('--nr_sents', default=100, type=int)
     p.add_argument('--unique_words', default=10000, type=int)
-    p.add_argument('--min_count', default=0, type=int)
+    p.add_argument('--min_count', default=2, type=int)
     p.add_argument('--lower', action='store_true')
     
     args = p.parse_args()
@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     # Prepare corpus + dictionaries, create training batches
     corpus = Corpus(args.english, args.french, args.batch_size, args.nr_sents,
-                    args.unique_words, args.min_count, args.lower,
+                    args.min_count, args.lower,
                     args.enable_cuda)
 
     vocab = corpus.dict_e.counts

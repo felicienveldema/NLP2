@@ -128,14 +128,14 @@ class Corpus(object):
             list of batches
         """
         # Sort lines by the length of the English sentences
-        sorted_lengths = [[len(x), len(y), word_positions(x), word_positions(y), x, y]
+        sorted_lengths = [[len(x), len(y), self.word_positions(x), self.word_positions(y), x, y]
                                for x,y in zip(self.lines_e, self.lines_f)]
         sorted_lengths.sort()
         
         batches = []
         
         # Go through data in steps of batch size
-        for i in range(0, len(eng_sents) - self.batch_size, self.batch_size):
+        for i in range(0, len(sorted_lengths) - self.batch_size, self.batch_size):
             max_french = max([x[1] for x in sorted_lengths[i:i+self.batch_size]])
             max_english = max([x[0] for x in sorted_lengths[i:i+self.batch_size]])
             batch_french = LongTensor(self.batch_size, max_french)
@@ -143,11 +143,7 @@ class Corpus(object):
             batch_english_pos = LongTensor(self.batch_size, max_english)
             batch_french_pos = LongTensor(self.batch_size, max_french)
 
-            batch_lines_e = sorted_lengths[4][i:i+self.batch_size]
-            batch_lines_f = sorted_lengths[5][i:i+self.batch_size]
-            batch_pos_e = sorted_lengths[2][i:i+self.batch_size]
-            batch_pos_f = sorted_lengths[3][i:i+self.batch_size]
-            for j, data in enumerate(sorted_lengths):
+            for j, data in enumerate(sorted_lengths[i:i+self.batch_size]):
                 # Map words to indices and pad with EOS tag
                 fline = self.pad_list(
                     data[5], False, max_french, pad=self.dict_f.word2index['</s>']
@@ -159,10 +155,10 @@ class Corpus(object):
                 batch_french[j, :] = LongTensor(fline)
                 batch_english[j,:] = LongTensor(eline)
 
-                e_pos = data[2] + [data[-1]]*(max_english - len(data[2]))
-                f_pos = data[3] + [data[-1]]*(max_french - len(data[3]))
+                e_pos = data[2] + [data[2][-1]]*(max_english - len(data[2]))
+                f_pos = data[3] + [data[3][-1]]*(max_french - len(data[3]))
                 batch_english_pos[j,:] = LongTensor(e_pos)
-                batch_french_pos[j,:] = LongTensor(e_pos)
+                batch_french_pos[j,:] = LongTensor(f_pos)
                 
             if enable_cuda:
                 batches.append((Variable(batch_english).cuda(), Variable(batch_english_pos).cuda(), Variable(batch_french).cuda(), Variable(batch_french_pos).cuda()))
@@ -171,7 +167,7 @@ class Corpus(object):
         random.shuffle(batches)
         return batches
 
-    def word_positions(line):
+    def word_positions(self, line):
         result = []
         pos = 1
         for word in line:
