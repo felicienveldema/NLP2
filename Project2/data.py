@@ -12,6 +12,8 @@ from nltk.tokenize import word_tokenize
 from torch import LongTensor
 from torch.autograd import Variable
 from collections import defaultdict, Counter
+from bpe import learn_bpe, BPE
+from copy import deepcopy
 
 
 class Dictionary(object):
@@ -48,17 +50,6 @@ class Dictionary(object):
         unk = self.add_word("UNK")
         self.word2index = defaultdict(lambda: unk, self.word2index)
 
-    def get_most_common(self, nr_unique_words):
-        """Get the top most common words:
-
-        Args:
-            nr_unique_words (int): number of words to keep
-
-        Returns:
-            set
-        """
-        return set(x[0] for x in self.counts.most_common(nr_unique_words))
-
 
 class Corpus(object):
     """Collects words and corresponding associations, preprocesses them."""
@@ -82,7 +73,7 @@ class Corpus(object):
         self.enable_cuda = enable_cuda
 
         # Read in the corpus
-        with open(pathl1, 'r') as f_eng, open(pathl2, 'r') as f_fre:
+        with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r', encoding='utf8') as f_fre:
             for line_e in f_eng:
                 line_f = f_fre.readline()
                 line_e = self.prepare(line_e, lower)
@@ -94,47 +85,33 @@ class Corpus(object):
                 if len(self.lines_e) == nr_docs and nr_docs != -1:
                     break
 
-        most_common_f = self.dict_f.get_most_common(nr_unique_words)
-        most_common_e = self.dict_e.get_most_common(nr_unique_words)  
-        self.lines_e = self.remove_min_count(min_count, self.lines_e, self.dict_e.counts)
-        self.lines_f = self.remove_min_count(min_count, self.lines_f, self.dict_f.counts)
-        self.lines_e = self.remove_uncommon_from_list(most_common_e, self.lines_e)
-        self.lines_f = self.remove_uncommon_from_list(most_common_f, self.lines_f)
+        learn_bpe(self.dict_e.counts, open("learned_bpe_e.txt", 'w', encoding='utf8'), 10000, min_frequency=40)
+        learn_bpe(self.dict_f.counts, open("learned_bpe_f.txt", 'w', encoding='utf8'), 10000, min_frequency=40)
+        bpe_f = BPE(open("learned_bpe_f.txt", 'r', encoding='utf8'), vocab=deepcopy(self.dict_f.counts))
+        bpe_e = BPE(open("learned_bpe_e.txt", 'r', encoding='utf8'), vocab=deepcopy(self.dict_e.counts))
 
-        # Redo, but remove infrequent words
-        dictionary_norare_e = Dictionary()
-        dictionary_norare_f = Dictionary()
-        for i, line in enumerate(self.lines_e):
-            dictionary_norare_e.add_text(line)
-        for i, line in enumerate(self.lines_f):
-            dictionary_norare_f.add_text(line)
+        # Read in the corpus
+        self.dict_e = Dictionary()
+        self.dict_f = Dictionary()
+        with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r', encoding='utf8') as f_fre:
+            for line_e in f_eng:
+                line_f = f_fre.readline()
+                if lower:
+                    line_e = line_e.lower()
+                    line_f = line_f.lower()
+
+                line_e = bpe_e.process_line(line_e)
+                line_f = bpe_f.process_line(line_f)
+                self.dict_e.add_text(line_e)
+                self.dict_f.add_text(line_f)
 
         # Update dictionaries and map to UNK
-        self.dict_e = dictionary_norare_e
-        self.dict_f = dictionary_norare_f
-        self.dict_e.to_unk()
-        self.dict_f.to_unk()
         self.vocab_size_e = len(self.dict_e.word2index)
         self.vocab_size_f = len(self.dict_f.word2index)
 
         # Create batches
         self.batches = self.get_batches(enable_cuda)
         logging.info("Created Corpus.")
-
-    def remove_min_count(self, min_count, lines, counts):
-        return [[x if counts[x] >= min_count else "UNK" for x in s] for s in lines]
-
-    def remove_uncommon_from_list(self, commons, lines):
-        """Replaces uncommon words in a line with UNK.
-
-        Args:
-            commons: list of common words
-            sentence: sentence to replace uncommon words in
-
-        Returns:
-            list with uncommon words replaced
-        """
-        return [[x if x in commons else "UNK" for x in s] for s in lines]
                      
     def get_batches(self, enable_cuda):
         """Create batches from data in class.
@@ -212,13 +189,3 @@ class Corpus(object):
         """
         if lower: sequence = sequence.lower()
         return ['<s>'] + word_tokenize(sequence) + ['</s>']
-
-if __name__ == '__main__':
-    l1path = './../data/hansards/training.en'
-    l2path = './../data/hansards/training.fr'
-    a = Corpus(l1path, l2path, 10, 2000, 10000)
-    print(a.batches[80][1][8])
-    print(a.batches[0][0].shape)
-    for batch in a.batches:
-        print(batch[0].shape, batch[1].shape)
-        
