@@ -10,6 +10,7 @@ from torch import optim
 from collections import defaultdict, Counter
 from random import shuffle
 from data import Corpus
+from bpe import learn_bpe, BPE
 
 
 if __name__ == "__main__":
@@ -40,11 +41,12 @@ if __name__ == "__main__":
         enable_cuda = False
         logging.info("CUDA is disabled")
 
-
     # Prepare corpus + dictionaries, create training batches
     corpus = Corpus(args.english, args.french, args.batch_size, args.nr_sents,
                     args.unique_words, args.min_count, args.lower,
                     args.enable_cuda)
-    logging.info("Loaded data.")
-    
+
+    vocab = corpus.dict_e.counts
+
+    logging.info("Loaded data.")    
     
