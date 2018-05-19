@@ -1,11 +1,3 @@
-"""Prepare a corpus for definition modelling.
-
-Tasks performed:
-    - Generate a vocab dictionary that maps words to indices and vice versa.
-    - Preprocess text by adding start and end tags.
-    - Convert pairs to numbers in preparation of training a language model.
-"""
-
 import nltk
 import sys
 import logging
@@ -14,7 +6,10 @@ import torch
 import pickle
 import os
 import numpy as np
+
 from tqdm import tqdm
+from nltk.tokenize import word_tokenize
+from torch import LongTensor
 from torch.autograd import Variable
 from collections import defaultdict, Counter
 
@@ -53,11 +48,23 @@ class Dictionary(object):
         unk = self.add_word("UNK")
         self.word2index = defaultdict(lambda: unk, self.word2index)
 
+    def get_most_common(self, nr_unique_words):
+        """Get the top most common words:
+
+        Args:
+            nr_unique_words (int): number of words to keep
+
+        Returns:
+            set
+        """
+        return set(x[0] for x in self.counts.most_common(nr_unique_words))
+
 
 class Corpus(object):
     """Collects words and corresponding associations, preprocesses them."""
 
-    def __init__(self, pathl1, pathl2, batch_size, nr_docs, nr_unique_words, enable_cuda=False):
+    def __init__(self, pathl1, pathl2, batch_size, nr_docs, nr_unique_words,
+                 min_count, lower, enable_cuda=False):
         """Initialize pairs of words and associations.
 
         Args:
@@ -68,8 +75,8 @@ class Corpus(object):
             enable_cuda (bool): whether to cuda the batches
         """
         self.batch_size = batch_size
-        self.dictionary_e = Dictionary()
-        self.dictionary_f = Dictionary()
+        self.dict_e = Dictionary()
+        self.dict_f = Dictionary()
         self.lines_e = []
         self.lines_f = []
         self.enable_cuda = enable_cuda
@@ -78,75 +85,96 @@ class Corpus(object):
         with open(pathl1, 'r') as f_eng, open(pathl2, 'r') as f_fre:
             for line_e in f_eng:
                 line_f = f_fre.readline()
-                line_e = self.prepare(line_e)
-                line_f = self.prepare(line_f)
-                self.dictionary_e.add_text(line_e)
-                self.dictionary_f.add_text(line_f)
+                line_e = self.prepare(line_e, lower)
+                line_f = self.prepare(line_f, lower)
+                self.dict_e.add_text(line_e)
+                self.dict_f.add_text(line_f)
                 self.lines_e.append(line_e)
                 self.lines_f.append(line_f)
                 if len(self.lines_e) == nr_docs and nr_docs != -1:
                     break
 
-        most_common_f = set([x[0] for x in self.dictionary_f.counts.most_common(nr_unique_words)])
-        most_common_e = set([x[0] for x in self.dictionary_e.counts.most_common(nr_unique_words)])                   
-        
+        most_common_f = self.dict_f.get_most_common(nr_unique_words)
+        most_common_e = self.dict_e.get_most_common(nr_unique_words)  
+        self.lines_e = self.remove_min_count(min_count, self.lines_e, self.dict_e.counts)
+        self.lines_f = self.remove_min_count(min_count, self.lines_f, self.dict_f.counts)
+        self.lines_e = self.remove_uncommon_from_list(most_common_e, self.lines_e)
+        self.lines_f = self.remove_uncommon_from_list(most_common_f, self.lines_f)
+
         # Redo, but remove infrequent words
         dictionary_norare_e = Dictionary()
         dictionary_norare_f = Dictionary()
         for i, line in enumerate(self.lines_e):
-            new_line = self.remove_uncommon_from_list(most_common_e, line)
-            dictionary_norare_e.add_text(new_line)
-            self.lines_e[i] = new_line
+            dictionary_norare_e.add_text(line)
         for i, line in enumerate(self.lines_f):
-            new_line = self.remove_uncommon_from_list(most_common_f, line)
-            dictionary_norare_f.add_text(new_line)
-            self.lines_f[i] = new_line
-        self.dictionary_e = dictionary_norare_e
-        self.dictionary_f = dictionary_norare_f
-        self.dictionary_e.to_unk()
-        self.dictionary_f.to_unk()
-        self.vocab_size_e = len(self.dictionary_e.word2index)
-        self.vocab_size_f = len(self.dictionary_f.word2index)
+            dictionary_norare_f.add_text(line)
+
+        # Update dictionaries and map to UNK
+        self.dict_e = dictionary_norare_e
+        self.dict_f = dictionary_norare_f
+        self.dict_e.to_unk()
+        self.dict_f.to_unk()
+        self.vocab_size_e = len(self.dict_e.word2index)
+        self.vocab_size_f = len(self.dict_f.word2index)
 
         # Create batches
         self.batches = self.get_batches(enable_cuda)
-
         logging.info("Created Corpus.")
-                     
-    def remove_uncommon_from_list(self, commons, sentence):
-        return [x if x in commons else "UNK"for x in sentence]
+
+    def remove_min_count(self, min_count, lines, counts):
+        return [[x if counts[x] >= min_count else "UNK" for x in s] for s in lines]
+
+    def remove_uncommon_from_list(self, commons, lines):
+        """Replaces uncommon words in a line with UNK.
+
+        Args:
+            commons: list of common words
+            sentence: sentence to replace uncommon words in
+
+        Returns:
+            list with uncommon words replaced
+        """
+        return [[x if x in commons else "UNK" for x in s] for s in lines]
                      
     def get_batches(self, enable_cuda):
         """Create batches from data in class.
 
         Args:
             enable_cuda (bool): cuda batches or not
+
         Returns:
             list of batches
         """
-        
-        lines_with_lengths = [[len(x), len(y), x, y] for x,y in zip(self.lines_e, self.lines_f)]
-        lines_with_lengths.sort()
-        eng_sents = [x[2] for x in lines_with_lengths]
-        fre_sents = [x[3] for x in lines_with_lengths]
+        # Sort lines by the length of the English sentences
+        sorted_lengths = [[len(x), len(y), x, y]
+                               for x,y in zip(self.lines_e, self.lines_f)]
+        sorted_lengths.sort()
+        eng_sents = [x[2] for x in sorted_lengths]
+        fre_sents = [x[3] for x in sorted_lengths]
 
         batches = []
         
         # Go through data in steps of batch size
         for i in range(0, len(eng_sents) - self.batch_size, self.batch_size):
-            longest_french_sentence = max([x[1] for x in lines_with_lengths[i:i+self.batch_size]])
-            longest_english_sentence = max([x[0] for x in lines_with_lengths[i:i+self.batch_size]])
-            batch_french = torch.LongTensor(self.batch_size, longest_french_sentence)
-            batch_english = torch.LongTensor(self.batch_size, longest_english_sentence)
+            max_french = max([x[1] for x in sorted_lengths[i:i+self.batch_size]])
+            max_english = max([x[0] for x in sorted_lengths[i:i+self.batch_size]])
+            batch_french = LongTensor(self.batch_size, max_french)
+            batch_english = LongTensor(self.batch_size, max_english)
 
             batch_lines_e = eng_sents[i:i+self.batch_size]
             batch_lines_f = fre_sents[i:i+self.batch_size]
             for j, (eline, fline) in enumerate(zip(batch_lines_e, batch_lines_f)):
-                fline = self.pad_list(self.to_indices(fline, False), longest_french_sentence, pad = self.dictionary_f.word2index['</s>'])
-                eline = self.pad_list(self.to_indices(eline, True), longest_english_sentence, pad = self.dictionary_e.word2index['</s>'])
+                # Map words to indices and pad with EOS tag
+                fline = self.pad_list(
+                    fline, False, max_french, pad=self.dict_f.word2index['</s>']
+                )
+                eline = self.pad_list(
+                    eline, True, max_english, pad=self.dict_e.word2index['</s>']
+                )
                 
-                batch_french[j, :] = torch.LongTensor(fline)
-                batch_english[j,:] = torch.LongTensor(eline)
+                batch_french[j, :] = LongTensor(fline)
+                batch_english[j,:] = LongTensor(eline)
+
             if enable_cuda:
                 batches.append((Variable(batch_english).cuda(), Variable(batch_french).cuda()))
             else:
@@ -154,48 +182,7 @@ class Corpus(object):
         random.shuffle(batches)
         return batches
 
-    def prepare_test(self, sentences_path="../data/lst/lst_valid.preprocessed",
-                     cand_path="../data/lst/lst.gold.candidates"):
-        test_pairs = []
-        candidates = dict()
-        candidates_rest = dict()
-        with open(cand_path, 'r') as f:
-            for line in f:
-                term, term_candidates = tuple(line.split("::"))
-                term_candidates = term_candidates.strip().split(";")
-                candidates[term] = self.to_indices(
-                    [term for term in term_candidates if term in self.dictionary_e.word2index]
-                )
-                candidates_rest[term] = [term for term in term_candidates if term not in self.dictionary_e.word2index]
-
-        with open(sentences_path, 'r') as f:
-            for line in f:
-                # Read in data line by line
-                term, number, pos, sentence = tuple(line.split("\t"))
-                pos = int(pos)
-                sentence = sentence.split()
-
-                # Extract the context of the term
-                indices = self.to_indices(sentence, True)
-                pre = indices[:pos]
-                post = indices[pos+1:]              
-                centre_tensor = Variable(torch.LongTensor([pre + [indices[pos]] + post]))
-                if self.enable_cuda:
-                    centre_tensor = centre_tensor.cuda()
-
-                # Create tensors with the candidates for replacements
-                candidate_tensors = []
-                for candidate in candidates[term]:
-                    tensor = Variable(torch.LongTensor([pre + [candidate] + post]))
-                    if self.enable_cuda:
-                        tensor = tensor.cuda()
-                    candidate_tensors.append((candidate, tensor))
-                
-                test_pairs.append((centre_tensor, int(number), term, candidate_tensors, candidates_rest[term]))
-        self.test_pairs = test_pairs
-        return self.test_pairs
-
-    def pad_list(self, input, length, pad=0):
+    def pad_list(self, line, english, length, pad=0):
         """Pads list to a certain length
         
         Args:
@@ -203,7 +190,8 @@ class Corpus(object):
             length (int): length to pad to
             pad (object): object to pad with
         """
-        return input + [pad] * max(0,length - len(input))
+        line = self.to_indices(line, english)
+        return line + [pad] * max(0,length - len(line))
         
     def to_indices(self, sequence, english=True):
         """Represent a history of words as a list of indices.
@@ -212,16 +200,18 @@ class Corpus(object):
             sequence (list of stringss): text to turn into indices
         """
         if english:
-            return [self.dictionary_e.word2index[w] for w in sequence]
+            return [self.dict_e.word2index[w] for w in sequence]
         else:
-            return [self.dictionary_f.word2index[w] for w in sequence]
-    def prepare(self, sequence):
+            return [self.dict_f.word2index[w] for w in sequence]
+
+    def prepare(self, sequence, lower):
         """Add start and end tags. Add words to the dictionary.
 
         Args:
             sequence (list of stringss): text to turn into indices
         """
-        return ['<s>'] + sequence.split() + ['</s>']
+        if lower: sequence = sequence.lower()
+        return ['<s>'] + word_tokenize(sequence) + ['</s>']
 
 if __name__ == '__main__':
     l1path = './../data/hansards/training.en'
