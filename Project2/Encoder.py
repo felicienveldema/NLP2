@@ -13,20 +13,31 @@ from torch.autograd import Variable
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, hidden_size):
+    def __init__(self, hidden_size, input_size, max_pos, type):
         super(Encoder, self).__init__()
         self.hidden_size = hidden_size
+        self.type = type
 
-        self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True)
+        if self.type.lower() == 'gru':
+            self.network = nn.GRU(hidden_size, hidden_size, batch_first=True)
+        elif self.type.lower() == 'rnn':
+            self.network = nn.RNN(hidden_size, hidden_size, batch_first=True)
 
-    def forward(self, english, hidden):
-        english_embed = self.embedding(english)
-        output, hidden = self.gru(english_embed, hidden)
-        return output, hidden
+        self.embeddings = nn.Embedding(input_size, hidden_size)
+        self.position_embeddings = nn.Embedding(max_pos, hidden_size)
+
+    def forward(self, english, positions, hidden):
+        english_embed = self.embeddings(english)
+        pos_embed = self.position_embeddings(positions)
+        english = torch.add(english_embed, pos_embed)
+        if self.type.lower() == 'avg':
+            return torch.mean(english, dim=1).unsqueeze(0)
+        else:
+            _, hidden = self.network(english, hidden)
+            return hidden
 
     def init_hidden(self, batch_size, enable_cuda):
         if enable_cuda:
-            return Variable(torch.randn(batch_size, 1, self.hidden_size)).cuda()
+            return Variable(torch.randn(1, batch_size, self.hidden_size)).cuda()
         else:
-            return Variable(torch.randn(batch_size, 1, self.hidden_size))
+            return Variable(torch.randn(1, batch_size, self.hidden_size))

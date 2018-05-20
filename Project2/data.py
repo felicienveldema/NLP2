@@ -73,6 +73,8 @@ class Corpus(object):
         self.lines_e = []
         self.lines_f = []
         self.enable_cuda = enable_cuda
+        self.max_pos = 0
+        self.lower = lower
 
         # Read in the corpus
         with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r', encoding='utf8') as f_fre:
@@ -97,27 +99,36 @@ class Corpus(object):
         # Read in the corpus again, now with BPE adapted vocabulary
         self.dict_e = Dictionary()
         self.dict_f = Dictionary()
-        with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r', encoding='utf8') as f_fre:
-            for line_e in f_eng:
-                line_f = f_fre.readline()
-                if lower:
-                    line_e = line_e.lower()
-                    line_f = line_f.lower()
 
-                line_e = self.bpe_e.process_line(line_e)
-                line_f = self.bpe_f.process_line(line_f)
-                self.dict_e.add_text(line_e)
-                self.dict_f.add_text(line_f)
-                self.lines_e.append(line_e)
-                self.lines_f.append(line_f)
+        lines_e, lines_f = self.load_data(pathl1, pathl2)
+        for line_e, line_f in zip(lines_e, lines_f):
+            self.dict_e.add_text(line_e)
+            self.dict_f.add_text(line_f)
+            self.lines_e.append(line_e)
+            self.lines_f.append(line_f)
 
+        self.dict_e.to_unk()
+        self.dict_f.to_unk()
         self.vocab_size_e = len(self.dict_e.word2index)
         self.vocab_size_f = len(self.dict_f.word2index)
-        print(self.vocab_size_f)
 
         # Create batches
         self.batches = self.get_batches(enable_cuda)
         logging.info("Created Corpus.")
+
+    def load_data(self, pathl1, pathl2):
+        lines_e = []
+        lines_f = []
+        with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r', encoding='utf8') as f_fre:
+            for line_e in f_eng:
+                line_f = f_fre.readline()
+                line_e = " ".join(self.prepare(line_e, self.lower))
+                line_f = " ".join(self.prepare(line_f, self.lower))
+                line_e = self.bpe_e.process_line(line_e).split()
+                line_f = self.bpe_f.process_line(line_f).split()
+                lines_e.append(line_e)
+                lines_f.append(line_f)
+        return lines_e, lines_f
                      
     def get_batches(self, enable_cuda):
         """Create batches from data in class.
@@ -181,8 +192,8 @@ class Corpus(object):
         pos = 1
         for word in line:
             result.append(pos)
-            if not (len(word) > 2 and word[-2:] == '@@'):
-                pos+=1
+            if pos > self.max_pos: self.max_pos = pos
+            if not (len(word) > 2 and word[-2:] == '@@'): pos += 1
         return result
         
     def pad_list(self, line, english, length, pad=0):
