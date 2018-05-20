@@ -107,6 +107,9 @@ class Corpus(object):
             self.lines_e.append(line_e)
             self.lines_f.append(line_f)
 
+        self.longest_english = max([len(e) for e in lines_e])
+        print(self.longest_english)
+
         self.dict_e.to_unk()
         self.dict_f.to_unk()
         self.vocab_size_e = len(self.dict_e.word2index)
@@ -226,3 +229,19 @@ class Corpus(object):
         """
         if lower: sequence = sequence.lower()
         return ['<s>'] + word_tokenize(sequence) + ['</s>']
+
+    def bpe_to_sentence(self, sequence):
+        sentence = []
+        separated_word = False
+        for token in sequence:
+            if separated_word and not "@@" in sequence:
+                sentence.append(token)
+            elif separated_word:
+                sentence[-1] = sentence[-1] + token.split("@@")[0]
+                if not "@@" in token:
+                    separated_word = False
+            else:
+                sentence.append(token.split("@@")[0])
+                separated_word = True
+
+        return sentence

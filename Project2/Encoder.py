@@ -31,10 +31,10 @@ class Encoder(nn.Module):
         pos_embed = self.position_embeddings(positions)
         english = torch.add(english_embed, pos_embed)
         if self.type.lower() == 'avg':
-            return torch.mean(english, dim=1).unsqueeze(0)
+            return torch.mean(english, dim=1).unsqueeze(0), english
         else:
-            _, hidden = self.network(english, hidden)
-            return hidden
+            output, hidden = self.network(english, hidden)
+            return hidden, output
 
     def init_hidden(self, batch_size, enable_cuda):
         if enable_cuda:
