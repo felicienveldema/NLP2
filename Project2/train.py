@@ -103,6 +103,7 @@ if __name__ == "__main__":
     p.add_argument('--french_valid',  type=str,   default='val/val.fr')
     p.add_argument('--enc_type',      type=str,   default='avg')
     p.add_argument('--dec_type',      type=str,   default='rnn')
+    p.add_argument('--attention',     type=str,   default='dot')
     p.add_argument('--lr',            type=float, default=0.001)
     p.add_argument('--tf_ratio',      type=float, default=0.75)
     p.add_argument('--batch_size',    type=int,   default=32)
@@ -135,7 +136,8 @@ if __name__ == "__main__":
     valid = corpus.load_data(args.english_valid, args.french_valid)
 
     eos = corpus.dict_f.word2index["</s>"]
-    decoder = Decoder(args.dim, corpus.vocab_size_f, eos, corpus.longest_english, args.dec_type)
+    decoder = Decoder(args.dim, corpus.vocab_size_f, eos, 
+                      corpus.longest_english, args.dec_type, args.attention)
 
     # Train
     losses = train(corpus, valid, encoder, decoder, args.lr, args.epochs,
@@ -145,4 +147,8 @@ if __name__ == "__main__":
     plt.figure(figsize=(15, 10))
     plt.plot([i for i in range(len(losses))], losses)
     plt.scatter([i for i in range(len(losses))], losses)
-    plt.savefig("loss_enc={}_dec={}.png".format(args.enc_type, args.dec_type))
+    plt.savefig("loss_enc={}_dec={}_att={}.png".format(args.enc_type, args.dec_type, args.attention))
+
+    torch.save(encoder, "encoder_type={}.pt".format(args.enc_type))
+    torch.save(decoder, "decoder_type={}.pt".format(args.dec_type))
+    pickle.dump(corpus, open("corpus.pickle", 'wb'))
