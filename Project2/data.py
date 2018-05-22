@@ -108,10 +108,9 @@ class Corpus(object):
             self.lines_f.append(line_f)
 
         self.longest_english = max([len(e) for e in lines_e])
-        print(self.longest_english)
-
-        self.dict_e.to_unk()
-        self.dict_f.to_unk()
+        #print(self.longest_english)
+        #self.dict_e.to_unk()
+        #self.dict_f.to_unk()
         self.vocab_size_e = len(self.dict_e.word2index)
         self.vocab_size_f = len(self.dict_f.word2index)
 
