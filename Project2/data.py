@@ -108,7 +108,8 @@ class Corpus(object):
             self.lines_f.append(line_f)
 
         self.longest_english = max([len(e) for e in lines_e])
-        #print(self.longest_english)
+        self.longest_french = max([len(f) for f in lines_f])
+        print(self.longest_french)
         #self.dict_e.to_unk()
         #self.dict_f.to_unk()
         self.vocab_size_e = len(self.dict_e.word2index)
@@ -233,7 +234,7 @@ class Corpus(object):
         sentence = []
         separated_word = False
         for token in sequence:
-            if separated_word and not "@@" in sequence:
+            if not separated_word and not "@@" in token:
                 sentence.append(token)
             elif separated_word:
                 sentence[-1] = sentence[-1] + token.split("@@")[0]

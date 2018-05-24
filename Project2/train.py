@@ -35,23 +35,10 @@ def clean(sequence):
     return sequence
 
 def validate(corpus, valid, max_length, enable_cuda, epoch):
-    # scores = []
-    # chencherry = SmoothingFunction()
-    # for english, french in tqdm(list(zip(valid[0], valid[1]))):
-    #     positions = corpus.word_positions(english)
-    #     indices = corpus.to_indices(english)
-    #     translation  = beam(encoder, decoder, indices, positions, corpus.dict_f.word2index,
-    #                           corpus.dict_f.index2word, max_length, enable_cuda)
-    #     # print(translation)
-    #     french = clean(corpus.bpe_to_sentence(french))
-    #     translation = clean(corpus.bpe_to_sentence(translation))
-    #     scores.append(sentence_bleu([french], translation, smoothing_function=chencherry.method1))
-    # score = sum(scores) / len(scores)
-    # print("Beam average BLEU score: {}".format(score))
 
     scores = []
     chencherry = SmoothingFunction()
-    for i, (english, french) in enumerate(list(zip(valid[0], valid[1]))):
+    for english, french in tqdm(list(zip(valid[0], valid[1]))):
         positions = corpus.word_positions(english)
         indices = corpus.to_indices(english)
         translation, attention  = greedy(
@@ -59,16 +46,16 @@ def validate(corpus, valid, max_length, enable_cuda, epoch):
             corpus.dict_f.index2word, max_length, enable_cuda
         )
 
-        if i == 0:
-            data = [go.Heatmap(z=attention, x=english, y=translation, colorscale='Viridis')]
-            layout = go.Layout(width=800, height=600)
-            fig = go.Figure(data=data, layout=layout)
-            py.image.save_as(fig, filename='weights_{}.png'.format(epoch))
-            with open("weights_{}.txt".format(epoch), 'w') as f:
-                f.write("\n".join(["\t".join([str(num) for num in line]) for line in attention]))
-                f.write("\n")
-                f.write("\t".join(english))
-                f.write("\t".join(translation))
+        # if i == 35:
+        #     #data = [go.Heatmap(z=attention, x=english, y=translation, colorscale='Viridis')]
+        #     #layout = go.Layout(width=800, height=600)
+        #     #fig = go.Figure(data=data, layout=layout)
+        #     #py.image.save_as(fig, filename='weights_{}.png'.format(epoch))
+        #     with open("weights_{}.txt".format(epoch), 'w') as f:
+        #         f.write("\n".join(["\t".join([str(num) for num in line]) for line in attention]))
+        #         f.write("\n")
+        #         f.write("\t".join(english))
+        #         f.write("\t".join(translation))
 
         french = clean(corpus.bpe_to_sentence(french))
         translation = clean(corpus.bpe_to_sentence(translation))
@@ -117,13 +104,14 @@ def train(corpus, valid, encoder, decoder, lr, epochs, batch_size, enable_cuda,
             optimizer.step()
             epoch_loss += loss.data[0] / french.shape[1]
 
+        bleus.append(validate(corpus, valid, max_length, enable_cuda, i))
         # Dropout annealing
         encoder.dropout_rate = max([0, 1 - i / 20]) * encoder.dropout_rate_0
         decoder.dropout_rate = max([0, 1 - i / 20]) * decoder.dropout_rate_0
         print(encoder.dropout_rate)
         print(decoder.dropout_rate)
 
-        bleus.append(validate(corpus, valid, max_length, enable_cuda, i))
+
         epoch_loss = epoch_loss / len(corpus.batches)
         logging.info("Loss per token: {}".format(epoch_loss))
         losses.append(epoch_loss)
@@ -147,7 +135,7 @@ if __name__ == "__main__":
     p.add_argument('--dim',           type=int,   default=100)
     p.add_argument('--num_symbols',   type=int,   default=10000)
     p.add_argument('--min_count',     type=int,   default=1)
-    p.add_argument('--max_length',    type=int,   default=50)
+    p.add_argument('--max_length',    type=int,   default=74)
     p.add_argument('--lower',         action='store_true')
     p.add_argument('--enable_cuda',   action='store_true')
 
@@ -157,7 +145,7 @@ if __name__ == "__main__":
     # Check whether GPU is present
     if args.enable_cuda and torch.cuda.is_available():
         enable_cuda = True
-        #torch.cuda.set_device(0)
+        torch.cuda.set_device(1)
         logging.info("CUDA is enabled")
     else:
         enable_cuda = False

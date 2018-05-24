@@ -1,51 +1,12 @@
-from __future__ import unicode_literals, print_function, division
-from io import open
-import unicodedata
-import string
-import re
 import copy
-import random
 import numpy as np
 
 import torch
 import torch.nn as nn
-from torch import optim
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-class BiLinearAttention(nn.Module):
-    def __init__(self, hidden_size):
-        super(BiLinearAttention, self).__init__()
-        self.w = nn.Linear(hidden_size, hidden_size)
-        self.softmax = nn.Softmax(dim=1)
-        self.normaliser = np.sqrt(hidden_size)
-        # Save weights for visualisation
-        self.last_weights = None
-
-    def forward(self, english, hidden):
-        hidden = hidden.transpose(0, 1).transpose(1,2)
-        english = self.w(english)
-        weights = self.softmax(torch.bmm(english, hidden) / self.normaliser).squeeze(2)
-        self.last_weights = weights.data[0, :]
-        return torch.bmm(weights.unsqueeze(1), english)
-
-
-class ScaledDotAttention(nn.Module):
-    def __init__(self, hidden_size):
-        super(ScaledDotAttention, self).__init__()
-        self.softmax = nn.Softmax(dim=1)
-        self.normaliser = np.sqrt(hidden_size)
-        # Save weights for visualisation
-        self.last_weights = None
-
-    def forward(self, english, hidden):
-        hidden = hidden.transpose(0, 1).transpose(1, 2)
-        dotproduct = torch.bmm(english, hidden).squeeze(2)
-        dotproduct = dotproduct / self.normaliser
-        weights = self.softmax(dotproduct)
-        self.last_weights = weights.data[0, :]
-        return torch.bmm(weights.unsqueeze(1), english)
-
+from Attention import ScaledDotAttention, MultiHeadAttention, BiLinearAttention
 
 class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size, end_token, max_length, type, attention_type):
@@ -53,6 +14,7 @@ class Decoder(nn.Module):
         self.hidden_size = hidden_size
         self.end_token = end_token
         self.type = type
+        self.attention_type = attention_type
 
         self.dropout_rate_0 = 0.5
         self.dropout_rate = 0.5
@@ -62,10 +24,13 @@ class Decoder(nn.Module):
         else:
             self.network = nn.RNN(hidden_size, hidden_size, batch_first=True)
 
-        if attention_type == "bilinear":
+        if attention_type.lower() == "bilinear":
             self.attention = BiLinearAttention(hidden_size)
+        elif attention_type.lower() == "multihead":
+            self.attention = MultiHeadAttention(hidden_size)
         else:
             self.attention = ScaledDotAttention(hidden_size)
+
         self.attention_combined = nn.Linear(hidden_size * 2, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
         self.logsoftmax = nn.LogSoftmax(dim=1)
@@ -73,20 +38,29 @@ class Decoder(nn.Module):
 
     def forward(self, french, english, hidden, validation=False):
         # Apply attention to English sentence
-        context = self.attention(english, hidden).transpose(0, 1)
+        context = self.attention(english, hidden, validation, self.dropout_rate).transpose(0, 1)
         hidden = self.attention_combined(torch.cat((hidden, context), dim=2))
 
         french = self.embedding(french).unsqueeze(1)
         if not validation:
             french = F.dropout(french, p=self.dropout_rate)
+            hidden = F.dropout(hidden, p=self.dropout_rate)
         output, hidden = self.network(french, hidden)
-        output_over_vocab = self.out(output[:, 0, :])
+
+        if not validation:
+            output_over_vocab = self.out(F.dropout(output[:, 0, :], p=self.dropout_rate))
+        else:
+            output_over_vocab = self.out(output[:, 0, :])
         vocab_probs = self.logsoftmax(output_over_vocab)
         return vocab_probs, hidden
 
     def eval(self, french, english, hidden):
         probs, hidden = self.forward( french, english, hidden, True) 
-        weights = self.attention.last_weights
+        if self.attention_type.lower() == "multihead":
+            weights = [self.attention.last_weights1,self.attention.last_weights2,
+                       self.attention.last_weights3] 
+        else:
+            weights = self.attention.last_weights
         return probs, hidden, weights
 
     def init_hidden(self, batch_size, enable_cuda):

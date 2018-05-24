@@ -19,7 +19,7 @@ class Encoder(nn.Module):
         self.type = type
 
         if self.type.lower() == 'gru':
-            self.network = nn.GRU(hidden_size, hidden_size, batch_first=True)
+            self.network = nn.GRU(hidden_size, hidden_size, batch_first=True, bidirectional=True)
         elif self.type.lower() == 'rnn':
             self.network = nn.RNN(hidden_size, hidden_size, batch_first=True)
 
@@ -30,21 +30,24 @@ class Encoder(nn.Module):
 
     def forward(self, english, positions, hidden, validation=False):
         english_embed = self.embeddings(english)
+        pos_embed = self.position_embeddings(positions)
+
         if not validation:
             english_embed = F.dropout(english_embed, p=self.dropout_rate)
-        pos_embed = self.position_embeddings(positions)
+            pos_embed = F.dropout(pos_embed, p=self.dropout_rate)
+
         english = torch.add(english_embed, pos_embed)
         if self.type.lower() == 'avg':
             return torch.mean(english, dim=1).unsqueeze(0), english
         else:
             output, hidden = self.network(english, hidden)
-            return hidden, output
+            return torch.add(hidden[0, :, :], hidden[1, :, :]).unsqueeze(0), torch.add(output[:, :, :self.hidden_size], output[:, :, self.hidden_size:])
 
     def eval(self, english, positions, hidden):
         return self.forward(english, positions, hidden, True)
 
     def init_hidden(self, batch_size, enable_cuda):
         if enable_cuda:
-            return Variable(torch.randn(1, batch_size, self.hidden_size)).cuda()
+            return Variable(torch.randn(2, batch_size, self.hidden_size)).cuda()
         else:
-            return Variable(torch.randn(1, batch_size, self.hidden_size))
+            return Variable(torch.randn(2, batch_size, self.hidden_size))
