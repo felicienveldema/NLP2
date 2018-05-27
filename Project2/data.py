@@ -186,7 +186,7 @@ class Corpus(object):
                 batch_french = batch_french.cuda()
                 batch_french_pos = batch_french_pos.cuda()
 
-            batches.append((batch_english, batch_english_pos, batch_french, batch_french_pos))
+            batches.append((batch_english, batch_english_pos, batch_french))
         random.shuffle(batches)
         return batches
 
@@ -217,9 +217,11 @@ class Corpus(object):
             sequence (list of stringss): text to turn into indices
         """
         if english:
-            return [self.dict_e.word2index[w] for w in sequence]
+            standard = self.dict_e.word2index['-']
+            return [(self.dict_e.word2index[w] if w in self.dict_e.word2index else standard) for w in sequence]
         else:
-            return [self.dict_f.word2index[w] for w in sequence]
+            standard = self.dict_f.word2index['-']
+            return [(self.dict_f.word2index[w] if w in self.dict_f.word2index else standard) for w in sequence]
 
     def prepare(self, sequence, lower):
         """Add start and end tags. Add words to the dictionary.

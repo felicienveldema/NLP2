@@ -44,16 +44,22 @@ class ScaledDotAttention(nn.Module):
     def forward(self, english, hidden, validation, dropout_rate, v=None):
         if v is None:
             hidden = hidden.transpose(0, 1).transpose(1, 2)
+
+        if hidden.shape[0] != english.shape[0]:
+            hidden = hidden.transpose(0, 2)
+
         dotproduct = torch.bmm(english, hidden).squeeze(2)
         dotproduct = dotproduct / self.normaliser
         weights = self.softmax(dotproduct)
         if not validation:
             weights = F.dropout(weights, p=dropout_rate)
         self.last_weights = weights.data[0, :]
+        if len(weights.shape) == 2:
+            weights = weights.unsqueeze(1)
         if v is None:
-            return torch.bmm(weights.unsqueeze(1), english)
+            return torch.bmm(weights, english)
         else:
-            return torch.bmm(weights.unsqueeze(1), v)
+            return torch.bmm(weights, v)
 
 
 class MultiHeadAttention(nn.Module):
@@ -63,17 +69,23 @@ class MultiHeadAttention(nn.Module):
         self.last_weights1 = None
         self.last_weights2 = None
         self.last_weights3 = None
-        self.w_q1 = nn.Linear(hidden_size, hidden_size)
-        self.w_q2 = nn.Linear(hidden_size, hidden_size)
-        self.w_q3 = nn.Linear(hidden_size, hidden_size)
-        self.w_k1 = nn.Linear(hidden_size, hidden_size)
-        self.w_k2 = nn.Linear(hidden_size, hidden_size)
-        self.w_k3 = nn.Linear(hidden_size, hidden_size)
-        self.w_v1 = nn.Linear(hidden_size, hidden_size)
-        self.w_v2 = nn.Linear(hidden_size, hidden_size)
-        self.w_v3 = nn.Linear(hidden_size, hidden_size)
-        self.w_o = nn.Linear(hidden_size*3, hidden_size)
-        self.dotattention = ScaledDotAttention(hidden_size)
+        self.last_weights4 = None
+        self.last_weights5 = None
+        self.last_weights6 = None
+
+        hidden_small = int(hidden_size/3)
+        self.w_q1 = nn.Linear(hidden_size, hidden_small)
+        self.w_q2 = nn.Linear(hidden_size, hidden_small)
+        self.w_q3 = nn.Linear(hidden_size, hidden_small)
+        self.w_k1 = nn.Linear(hidden_size, hidden_small)
+        self.w_k2 = nn.Linear(hidden_size, hidden_small)
+        self.w_k3 = nn.Linear(hidden_size, hidden_small)
+        self.w_v1 = nn.Linear(hidden_size, hidden_small)
+        self.w_v2 = nn.Linear(hidden_size, hidden_small)
+        self.w_v3 = nn.Linear(hidden_size, hidden_small)
+
+        self.w_o = nn.Linear(hidden_small*3, hidden_size)
+        self.dotattention = ScaledDotAttention(hidden_small)
 
     def forward(self, english, hidden, validation, dropout_rate):
         hidden = hidden.transpose(0, 1)

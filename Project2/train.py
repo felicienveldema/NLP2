@@ -20,7 +20,7 @@ import plotly.offline as offline
 import plotly
 plotly.tools.set_credentials_file(username='vdankers', api_key='iqYAxJNr16lmrFjgys4l')
 
-from Encoder import Encoder
+from Encoder import Encoder, TransformerEncoder
 from Decoder import Decoder
 from test import greedy, beam
 
@@ -38,7 +38,7 @@ def validate(corpus, valid, max_length, enable_cuda, epoch):
 
     scores = []
     chencherry = SmoothingFunction()
-    for english, french in tqdm(list(zip(valid[0], valid[1]))):
+    for english, french in list(zip(valid[0], valid[1])):
         positions = corpus.word_positions(english)
         indices = corpus.to_indices(english)
         translation, attention  = greedy(
@@ -63,7 +63,7 @@ def validate(corpus, valid, max_length, enable_cuda, epoch):
 
 
     score = sum(scores) / len(scores)
-    print("Greedy average BLEU score: {}".format(score))
+    logging.info("Greedy average BLEU score: {}".format(score))
 
     return score
 
@@ -78,13 +78,12 @@ def train(corpus, valid, encoder, decoder, lr, epochs, batch_size, enable_cuda,
     for i in range(epochs):
         epoch_loss = 0
 
-        for english, english_pos, french, french_pos in tqdm(corpus.batches):
+        for english, english_pos, french in corpus.batches:
             optimizer.zero_grad()
             use_teacher_forcing = True if random() < ratio else False
 
             # First run the encoder, it encodes the English sentence
-            h_enc = encoder.init_hidden(batch_size, enable_cuda)
-            h_dec, english = encoder(english, english_pos, h_enc)
+            h_dec, english = encoder(english, english_pos)
 
             # Now go through the decoder step by step and use teacher forcing
             # for a ratio of the batches
@@ -126,13 +125,13 @@ if __name__ == "__main__":
     p.add_argument('--english_valid', type=str,   default='val/val.en')
     p.add_argument('--french_valid',  type=str,   default='val/val.fr')
     p.add_argument('--enc_type',      type=str,   default='avg')
-    p.add_argument('--dec_type',      type=str,   default='rnn')
+    p.add_argument('--dec_type',      type=str,   default='gru')
     p.add_argument('--attention',     type=str,   default='dot')
-    p.add_argument('--lr',            type=float, default=0.001)
+    p.add_argument('--lr',            type=float, default=0.0005)
     p.add_argument('--tf_ratio',      type=float, default=0.75)
     p.add_argument('--batch_size',    type=int,   default=32)
     p.add_argument('--epochs',        type=int,   default=10)
-    p.add_argument('--dim',           type=int,   default=100)
+    p.add_argument('--dim',           type=int,   default=400)
     p.add_argument('--num_symbols',   type=int,   default=10000)
     p.add_argument('--min_count',     type=int,   default=1)
     p.add_argument('--max_length',    type=int,   default=74)
@@ -155,8 +154,12 @@ if __name__ == "__main__":
     corpus = Corpus(args.english_train, args.french_train, args.batch_size,
                     args.num_symbols, args.min_count, args.lower,
                     args.enable_cuda)
-    encoder = Encoder(args.dim, corpus.vocab_size_e, corpus.max_pos,
-                      args.enc_type)
+    if args.enc_type.lower() == "transformer":
+        encoder = TransformerEncoder(args.dim, corpus.vocab_size_e, corpus.max_pos,
+                          enable_cuda)
+    else:
+        encoder = Encoder(args.dim, corpus.vocab_size_e, corpus.max_pos,
+                          args.enc_type, enable_cuda)
     valid = corpus.load_data(args.english_valid, args.french_valid)
 
     eos = corpus.dict_f.word2index["</s>"]
@@ -172,16 +175,20 @@ if __name__ == "__main__":
                           args.max_length)
 
     # Plot losses and save figure
-    plt.figure(figsize=(15, 10))
-    plt.plot([i for i in range(len(losses))], losses)
-    plt.scatter([i for i in range(len(losses))], losses)
-    plt.savefig("loss_enc={}_dec={}_att={}.png".format(args.enc_type, args.dec_type, args.attention))
+    #plt.figure(figsize=(15, 10))
+    #plt.plot([i for i in range(len(losses))], losses)
+    #plt.scatter([i for i in range(len(losses))], losses)
+    #plt.savefig("loss_enc={}_dec={}_att={}.png".format(args.enc_type, args.dec_type, args.attention))
 
-    plt.figure(figsize=(15, 10))
-    plt.plot([i for i in range(len(bleus))], bleus)
-    plt.scatter([i for i in range(len(bleus))], bleus)
-    plt.savefig("bleu_enc={}_dec={}_att={}.png".format(args.enc_type, args.dec_type, args.attention))
+    #plt.figure(figsize=(15, 10))
+    #plt.plot([i for i in range(len(bleus))], bleus)
+    #plt.scatter([i for i in range(len(bleus))], bleus)
+    #plt.savefig("bleu_enc={}_dec={}_att={}.png".format(args.enc_type, args.dec_type, args.attention))
 
     torch.save(encoder, "encoder_type={}.pt".format(args.enc_type))
     torch.save(decoder, "decoder_type={}.pt".format(args.dec_type))
+    corpus.dict_e.word2index = list(corpus.dict_e.word2index.items())
+    corpus.dict_e.index2word = list(corpus.dict_e.index2word.items())
+    corpus.dict_f.word2index = list(corpus.dict_f.word2index.items())
+    corpus.dict_f.index2word = list(corpus.dict_f.index2word.items())
     pickle.dump(corpus, open("corpus.pickle", 'wb'))
