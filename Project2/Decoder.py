@@ -8,14 +8,17 @@ from torch.autograd import Variable
 
 from Attention import ScaledDotAttention, MultiHeadAttention, BiLinearAttention
 
+
 class Decoder(nn.Module):
-    def __init__(self, hidden_size, output_size, end_token, max_length, type, attention_type):
+    def __init__(self, hidden_size, output_size, end_token, max_length, type,
+        "        attention_type):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.end_token = end_token
         self.type = type
         self.attention_type = attention_type
 
+        # Initialize dropout rates
         self.dropout_rate_0 = 0.5
         self.dropout_rate = 0.5
         self.embedding = nn.Embedding(output_size, hidden_size)
@@ -24,6 +27,7 @@ class Decoder(nn.Module):
         else:
             self.network = nn.RNN(hidden_size, hidden_size, batch_first=True)
 
+        # Initialize the right attention mechanisms
         if attention_type.lower() == "bilinear":
             self.attention = BiLinearAttention(hidden_size)
         elif attention_type.lower() == "multihead":
@@ -37,11 +41,25 @@ class Decoder(nn.Module):
 
 
     def forward(self, french, english, hidden, validation=False):
-        # Apply attention to English sentence
-        context = self.attention(english, hidden, validation, self.dropout_rate).transpose(0, 1)
-        hidden = self.attention_combined(torch.cat((hidden, context), dim=2))
+        """Forward pass for the GRU decoder with attention.
 
+        Args:
+            french (Variable LongTensor): french indices batchwise
+            english (Variable FloatTensor): encoding of english sentence
+            hidden (Variable FloatTensor): hidden state from encoder
+            validation (bool): whether we are evaluating (do not apply dropout)
+
+        Returns:
+            vocab_probs: distribution over vocabulary
+            hidden: hidden state of decoder
+        """
+        # Apply attention to English sentence
+        context = self.attention(english, hidden, validation,
+                                 self.dropout_rate).transpose(0, 1)
+        hidden = self.attention_combined(torch.cat((hidden, context), dim=2))
         french = self.embedding(french).unsqueeze(1)
+
+        # Only apply dropout during training
         if not validation:
             french = F.dropout(french, p=self.dropout_rate)
             hidden = F.dropout(hidden, p=self.dropout_rate)
@@ -55,6 +73,19 @@ class Decoder(nn.Module):
         return vocab_probs, hidden
 
     def eval(self, french, english, hidden):
+        """Evaluation pass for the GRU decoder with attention: don't apply
+        dropout.
+
+        Args:
+            french (Variable LongTensor): french indices batchwise
+            english (Variable FloatTensor): encoding of english sentence
+            hidden (Variable FloatTensor): hidden state from encoder
+
+        Returns:
+            vocab_probs: distribution over vocabulary
+            hidden: hidden state of decoder
+            weights: weights for visualization of attention
+        """
         probs, hidden = self.forward( french, english, hidden, True) 
         if self.attention_type.lower() == "multihead":
             weights = [self.attention.last_weights1,self.attention.last_weights2,
@@ -64,6 +95,15 @@ class Decoder(nn.Module):
         return probs, hidden, weights
 
     def init_hidden(self, batch_size, enable_cuda):
+        """Initialize the first hidden state randomly.
+
+        Args:
+            batch_size (int)
+            enable_cuda (bool): whether a GPU is available
+
+        Returns:
+            Variable FloatTensor
+        """
         if enable_cuda:
             return Variable(torch.randn(1, batch_size, self.hidden_size)).cuda()
         else:

@@ -77,7 +77,8 @@ class Corpus(object):
         self.lower = lower
 
         # Read in the corpus
-        with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r', encoding='utf8') as f_fre:
+        with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r',
+                 encoding='utf8') as f_fre:
             for line_e in f_eng:
                 line_f = f_fre.readline()
                 line_e = self.prepare(line_e, lower)
@@ -122,7 +123,8 @@ class Corpus(object):
     def load_data(self, pathl1, pathl2):
         lines_e = []
         lines_f = []
-        with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r', encoding='utf8') as f_fre:
+        with open(pathl1, 'r', encoding='utf8') as f_eng, open(pathl2, 'r',
+                  encoding='utf8') as f_fre:
             for line_e in f_eng:
                 line_f = f_fre.readline()
                 line_e = " ".join(self.prepare(line_e, self.lower))
@@ -143,7 +145,8 @@ class Corpus(object):
             list of batches
         """
         # Sort lines by the length of the English sentences
-        sorted_lengths = [[len(x), len(y), self.word_positions(x), self.word_positions(y), x, y]
+        sorted_lengths = [[len(x), len(y), self.word_positions(x),
+                           self.word_positions(y), x, y]
                                for x,y in zip(self.lines_e, self.lines_f)]
         sorted_lengths.sort()
         
@@ -191,6 +194,14 @@ class Corpus(object):
         return batches
 
     def word_positions(self, line):
+        """"Get the positions corresponding to a sentence.
+
+        Args:
+            line (list of str)
+
+        Returns:
+            result (list of int)
+        """
         result = []
         pos = 1
         for word in line:
@@ -218,10 +229,14 @@ class Corpus(object):
         """
         if english:
             standard = self.dict_e.word2index['-']
-            return [(self.dict_e.word2index[w] if w in self.dict_e.word2index else standard) for w in sequence]
+            return [(self.dict_e.word2index[w] 
+                    if w in self.dict_e.word2index
+                    else standard) for w in sequence]
         else:
             standard = self.dict_f.word2index['-']
-            return [(self.dict_f.word2index[w] if w in self.dict_f.word2index else standard) for w in sequence]
+            return [(self.dict_f.word2index[w]
+                    if w in self.dict_f.word2index
+                    else standard) for w in sequence]
 
     def prepare(self, sequence, lower):
         """Add start and end tags. Add words to the dictionary.
@@ -233,6 +248,14 @@ class Corpus(object):
         return ['<s>'] + word_tokenize(sequence) + ['</s>']
 
     def bpe_to_sentence(self, sequence):
+        """Tranform a BPE back to a sentence.
+
+        Args:
+            sequence (list of str)
+
+        Returns:
+            sentence: list of str
+        """
         sentence = []
         separated_word = False
         for token in sequence:

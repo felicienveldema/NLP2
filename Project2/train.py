@@ -28,14 +28,34 @@ from test import greedy, beam
 BOS = "<s>"
 EOS = "</s>"
 
+
 def clean(sequence):
-    # Remove BOS en EOS tokens because they should not be taken into account in BLEU
+    """Remove BOS en EOS tokens, they should not be taken into account in BLEU.
+
+    Args:
+        sequence (list of str): sequence containing BOS and/or EOS tags
+
+    Returns:
+        sequence with BOS and EOS tags removed
+    """
     if BOS in sequence: sequence.remove(BOS)
     if EOS in sequence: sequence.remove(EOS)
     return sequence
 
-def validate(corpus, valid, max_length, enable_cuda, epoch):
 
+def validate(corpus, valid, max_length, enable_cuda, epoch):
+    """Calculate the BLEU scores for the validation data.
+
+    Args:
+        corpus (Corpus): containing w2i and i2w dictionaries
+        valid (two lists): french and english sentences
+        max_length (int): maximum length of generated translation
+        enable_cuda (bool): whether GPU is available
+        epoch (int): which epoch we are at now
+
+    Returns:
+        BLEU score (int)
+    """
     scores = []
     chencherry = SmoothingFunction()
     for english, french in list(zip(valid[0], valid[1])):
@@ -46,30 +66,50 @@ def validate(corpus, valid, max_length, enable_cuda, epoch):
             corpus.dict_f.index2word, max_length, enable_cuda
         )
 
-        # if i == 35:
-        #     #data = [go.Heatmap(z=attention, x=english, y=translation, colorscale='Viridis')]
-        #     #layout = go.Layout(width=800, height=600)
-        #     #fig = go.Figure(data=data, layout=layout)
-        #     #py.image.save_as(fig, filename='weights_{}.png'.format(epoch))
-        #     with open("weights_{}.txt".format(epoch), 'w') as f:
-        #         f.write("\n".join(["\t".join([str(num) for num in line]) for line in attention]))
-        #         f.write("\n")
-        #         f.write("\t".join(english))
-        #         f.write("\t".join(translation))
+        # Attention visualization
+        if i == 35:
+            data = [go.Heatmap(z=attention, x=english, y=translation,
+                    colorscale='Viridis')]
+            layout = go.Layout(width=800, height=600)
+            fig = go.Figure(data=data, layout=layout)
+            py.image.save_as(fig, filename='weights_{}.png'.format(epoch))
+            with open("weights_{}.txt".format(epoch), 'w') as f:
+                f.write("\n".join(["\t".join([str(num) for num in line])
+                                   for line in attention]))
+                f.write("\n")
+                f.write("\t".join(english))
+                f.write("\t".join(translation))
 
         french = clean(corpus.bpe_to_sentence(french))
         translation = clean(corpus.bpe_to_sentence(translation))
-        scores.append(sentence_bleu([french], translation, smoothing_function=chencherry.method1))
-
+        scores.append(sentence_bleu([french], translation,
+                                     smoothing_function=chencherry.method1))
 
     score = sum(scores) / len(scores)
     logging.info("Greedy average BLEU score: {}".format(score))
-
     return score
 
 
 def train(corpus, valid, encoder, decoder, lr, epochs, batch_size, enable_cuda,
           ratio, max_length):
+    """Calculate the BLEU scores for the validation data.
+
+    Args:
+        corpus (Corpus): containing w2i and i2w dictionaries
+        valid (two lists): french and english sentences
+        encoder (Encoder): custom encoder object
+        decoder (Decoder): custom decoder object
+        lr (float): learning rate
+        epochs (int): number of learning iterations to train the model
+        batch_size (int): the batch size
+        enable_cuda (bool): whether GPU is available
+        ratio (float): ratio for teacher forcing
+        max_length (int): maximum length of generated translation
+
+    Returns:
+        losses (list of floats)
+        bleus (list of floats)
+    """
     criterion = nn.NLLLoss()
     optimizer = torch.optim.Adam(list(encoder.parameters()) +
                                  list(decoder.parameters()), lr=lr)
@@ -104,17 +144,14 @@ def train(corpus, valid, encoder, decoder, lr, epochs, batch_size, enable_cuda,
             epoch_loss += loss.data[0] / french.shape[1]
 
         bleus.append(validate(corpus, valid, max_length, enable_cuda, i))
+
         # Dropout annealing
         encoder.dropout_rate = max([0, 1 - i / 20]) * encoder.dropout_rate_0
         decoder.dropout_rate = max([0, 1 - i / 20]) * decoder.dropout_rate_0
-        print(encoder.dropout_rate)
-        print(decoder.dropout_rate)
-
 
         epoch_loss = epoch_loss / len(corpus.batches)
         logging.info("Loss per token: {}".format(epoch_loss))
         losses.append(epoch_loss)
-
     return losses, bleus
 
 
@@ -175,15 +212,17 @@ if __name__ == "__main__":
                           args.max_length)
 
     # Plot losses and save figure
-    #plt.figure(figsize=(15, 10))
-    #plt.plot([i for i in range(len(losses))], losses)
-    #plt.scatter([i for i in range(len(losses))], losses)
-    #plt.savefig("loss_enc={}_dec={}_att={}.png".format(args.enc_type, args.dec_type, args.attention))
+    plt.figure(figsize=(15, 10))
+    plt.plot([i for i in range(len(losses))], losses)
+    plt.scatter([i for i in range(len(losses))], losses)
+    plt.savefig("loss_enc={}_dec={}_att={}.png".format(args.enc_type,
+                args.dec_type, args.attention))
 
-    #plt.figure(figsize=(15, 10))
-    #plt.plot([i for i in range(len(bleus))], bleus)
-    #plt.scatter([i for i in range(len(bleus))], bleus)
-    #plt.savefig("bleu_enc={}_dec={}_att={}.png".format(args.enc_type, args.dec_type, args.attention))
+    plt.figure(figsize=(15, 10))
+    plt.plot([i for i in range(len(bleus))], bleus)
+    plt.scatter([i for i in range(len(bleus))], bleus)
+    plt.savefig("bleu_enc={}_dec={}_att={}.png".format(args.enc_type,
+                args.dec_type, args.attention))
 
     torch.save(encoder, "encoder_type={}.pt".format(args.enc_type))
     torch.save(decoder, "decoder_type={}.pt".format(args.dec_type))

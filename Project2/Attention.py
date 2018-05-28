@@ -24,6 +24,17 @@ class BiLinearAttention(nn.Module):
         self.last_weights = None
 
     def forward(self, english, hidden, validation, dropout_rate):
+        """Forward pass of bilinear attention mechanism.
+
+        Args:
+            english (Variable FloatTensor): embeddings
+            hidden (Variable FloatTensor): last hidden state of decoder
+            validation (bool): whether to apply dropout
+            dropout_rate (float): how much dropout to apply
+
+        Returns:
+            weighted representation of input embeddings
+        """
         hidden = hidden.transpose(0, 1).transpose(1,2)
         english = self.w(english)
         weights = self.softmax(torch.bmm(english, hidden) / self.normaliser).squeeze(2)
@@ -42,6 +53,18 @@ class ScaledDotAttention(nn.Module):
         self.last_weights = None
 
     def forward(self, english, hidden, validation, dropout_rate, v=None):
+        """Forward pass of scaled dot product mechanism.
+
+        Args:
+            english (Variable FloatTensor): embeddings
+            hidden (Variable FloatTensor): last hidden state of decoder
+            validation (bool): whether to apply dropout
+            dropout_rate (float): how much dropout to apply
+            v (Variable FloatTensor): the values to apply the weights to
+
+        Returns:
+            weighted representation of input embeddings
+        """
         if v is None:
             hidden = hidden.transpose(0, 1).transpose(1, 2)
 
@@ -88,6 +111,17 @@ class MultiHeadAttention(nn.Module):
         self.dotattention = ScaledDotAttention(hidden_small)
 
     def forward(self, english, hidden, validation, dropout_rate):
+        """Forward pass of Multiheadattention mechanism with three heads.
+
+        Args:
+            english (Variable FloatTensor): embeddings
+            hidden (Variable FloatTensor): last hidden state of decoder
+            validation (bool): whether to apply dropout
+            dropout_rate (float): how much dropout to apply
+
+        Returns:
+            weighted representation of input embeddings
+        """
         hidden = hidden.transpose(0, 1)
 
         # Head 1
